@@ -28,7 +28,7 @@ export const DEFAULT_SIGN_LANGUAGE: Language = SUPPORTED_LANGUAGES.sign[0];
 
 export const HAND_MODEL_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/';
 
-// Simple mapping of basic ASL signs to English words (for demo purposes)
+// Expanded mapping of ASL signs to English words
 export const ASL_TO_ENGLISH_MAPPING: Record<string, string> = {
   'thumbs_up': 'yes',
   'thumbs_down': 'no',
@@ -38,13 +38,4 @@ export const ASL_TO_ENGLISH_MAPPING: Record<string, string> = {
   'closed_fist': 'stop',
   'i_love_you': 'love',
   'pinch': 'small',
-};
-
-// Pre-recorded sign language videos for speech to sign translation (for demo purposes)
-export const SIGN_VIDEOS: Record<string, string> = {
-  'hello': '/signs/hello.mp4',
-  'goodbye': '/signs/goodbye.mp4',
-  'thank_you': '/signs/thank_you.mp4',
-  'please': '/signs/please.mp4',
-  'help': '/signs/help.mp4',
 };

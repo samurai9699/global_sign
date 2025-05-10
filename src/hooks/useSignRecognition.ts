@@ -42,12 +42,12 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
 
     try {
       await handsRef.current.send({ image: videoRef.current });
+      animationFrameRef.current = requestAnimationFrame(processFrame);
     } catch (err) {
       console.error('Frame processing error:', err);
+      setError('Error processing video frame');
     }
-
-    animationFrameRef.current = requestAnimationFrame(processFrame);
-  }, []);
+  }, [videoRef]);
 
   // Initialize MediaPipe Hands
   const initializeHands = useCallback(async () => {
@@ -60,8 +60,8 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       hands.setOptions({
         maxNumHands: 2,
         modelComplexity: 1,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.7,
       });
 
       hands.onResults((results: Results) => {
@@ -97,13 +97,13 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
           gestureStabilityCountRef.current++;
         } else {
           gestureStabilityCountRef.current = 1;
+          lastGestureRef.current = gesture.name;
         }
 
         if (gestureStabilityCountRef.current >= GESTURE_STABILITY_THRESHOLD) {
           gestureCountRef.current[gesture.name] = (gestureCountRef.current[gesture.name] || 0) + 1;
           
           setDetectedGesture(gesture);
-          lastGestureRef.current = gesture.name;
           
           const translatedWord = ASL_TO_ENGLISH_MAPPING[gesture.name];
           console.log('✅ Gesture Mapped to Text:', translatedWord);
@@ -114,14 +114,20 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
               text: '',
               timestamp: Date.now(),
             };
-            return {
-              ...newChunk,
-              gestures: [...newChunk.gestures, gesture],
-              text: translatedWord, // Add immediate feedback
-            };
+            
+            // Only add the gesture if it's different from the last one
+            const lastGesture = newChunk.gestures[newChunk.gestures.length - 1];
+            if (!lastGesture || lastGesture.name !== gesture.name) {
+              return {
+                ...newChunk,
+                gestures: [...newChunk.gestures, gesture],
+                text: `${newChunk.text} ${translatedWord}`.trim(),
+              };
+            }
+            return newChunk;
           });
           
-          setTranslatedText(translatedWord); // Update immediately
+          setTranslatedText(prev => `${prev} ${translatedWord}`.trim());
           console.log('✅ Text Rendered to Screen');
           resetChunkTimeout();
         }
@@ -139,14 +145,19 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       const thumbTip = landmarks[4];
       const indexTip = landmarks[8];
       const middleTip = landmarks[12];
+      const ringTip = landmarks[16];
+      const pinkyTip = landmarks[20];
       const palmBase = landmarks[0];
       
-      // Enhanced gesture detection logic with more precise measurements
-      const thumbUp = thumbTip.y < landmarks[2].y && Math.abs(thumbTip.x - palmBase.x) < 0.1;
-      const indexUp = indexTip.y < landmarks[5].y && Math.abs(indexTip.x - landmarks[5].x) < 0.1;
-      const middleUp = middleTip.y < landmarks[9].y && Math.abs(middleTip.x - landmarks[9].x) < 0.1;
+      // Calculate distances and angles for more accurate gesture recognition
+      const thumbUp = thumbTip.y < landmarks[2].y && Math.abs(thumbTip.x - palmBase.x) < 0.15;
+      const indexUp = indexTip.y < landmarks[5].y && Math.abs(indexTip.x - landmarks[5].x) < 0.15;
+      const middleUp = middleTip.y < landmarks[9].y && Math.abs(middleTip.x - landmarks[9].x) < 0.15;
+      const ringUp = ringTip.y < landmarks[13].y && Math.abs(ringTip.x - landmarks[13].x) < 0.15;
+      const pinkyUp = pinkyTip.y < landmarks[17].y && Math.abs(pinkyTip.x - landmarks[17].x) < 0.15;
       
-      if (thumbUp && !indexUp && !middleUp) {
+      // Thumbs up gesture
+      if (thumbUp && !indexUp && !middleUp && !ringUp && !pinkyUp) {
         return {
           name: 'thumbs_up',
           confidence: 0.95,
@@ -154,7 +165,8 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
         };
       }
       
-      if (!thumbUp && indexUp && middleUp) {
+      // Victory sign
+      if (!thumbUp && indexUp && middleUp && !ringUp && !pinkyUp) {
         return {
           name: 'victory',
           confidence: 0.95,
@@ -162,9 +174,19 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
         };
       }
       
-      if (!thumbUp && indexUp && !middleUp) {
+      // Pointing up
+      if (!thumbUp && indexUp && !middleUp && !ringUp && !pinkyUp) {
         return {
           name: 'pointing_up',
+          confidence: 0.95,
+          timestamp: Date.now(),
+        };
+      }
+      
+      // Open palm (hello)
+      if (!thumbUp && indexUp && middleUp && ringUp && pinkyUp) {
+        return {
+          name: 'open_palm',
           confidence: 0.95,
           timestamp: Date.now(),
         };
