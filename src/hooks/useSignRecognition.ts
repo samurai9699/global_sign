@@ -4,8 +4,8 @@ import { HandGesture, ConversationChunk } from '../types';
 import { ASL_TO_ENGLISH_MAPPING } from '../utils/constants';
 
 const CHUNK_TIMEOUT = 1500; // 1.5 seconds for natural chunking
-const CONFIDENCE_THRESHOLD = 0.7; // Lowered from 0.85 for better responsiveness
-const GESTURE_STABILITY_THRESHOLD = 2; // Number of consistent frames needed
+const CONFIDENCE_THRESHOLD = 0.5; // Lowered threshold for better detection
+const GESTURE_STABILITY_THRESHOLD = 1; // Reduced for faster response
 const IDLE_TIMEOUT = 5000; // 5 seconds before showing "No gesture detected"
 
 export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) {
@@ -59,9 +59,9 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       });
 
       hands.setOptions({
-        maxNumHands: 1, // Focus on one hand for better performance
-        modelComplexity: 1,
-        minDetectionConfidence: 0.5, // Lowered threshold for better detection
+        maxNumHands: 1,
+        modelComplexity: 0, // Reduced for better performance
+        minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5,
       });
 
@@ -93,38 +93,30 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       if (gesture) {
         console.log('✅ Gesture Detected:', gesture.name);
         
-        if (lastGestureRef.current === gesture.name) {
-          gestureStabilityCountRef.current++;
-        } else {
-          gestureStabilityCountRef.current = 1;
-          lastGestureRef.current = gesture.name;
-        }
-
-        if (gestureStabilityCountRef.current >= GESTURE_STABILITY_THRESHOLD) {
-          const translatedWord = ASL_TO_ENGLISH_MAPPING[gesture.name];
-          console.log('✅ Gesture Mapped to Text:', translatedWord);
-          
-          setDetectedGesture(gesture);
-          
-          // Update current chunk immediately
-          setCurrentChunk(prev => {
-            const newChunk: ConversationChunk = {
-              gestures: prev ? [...prev.gestures, gesture] : [gesture],
-              text: prev ? `${prev.text} ${translatedWord}`.trim() : translatedWord,
-              timestamp: Date.now(),
-            };
-            return newChunk;
-          });
-          
-          // Update translated text immediately
-          setTranslatedText(prev => {
-            const newText = `${prev ? prev + ' ' : ''}${translatedWord}`.trim();
-            console.log('✅ Text Rendered:', newText);
-            return newText;
-          });
-          
-          resetChunkTimeout();
-        }
+        // Immediately process the gesture
+        const translatedWord = ASL_TO_ENGLISH_MAPPING[gesture.name];
+        console.log('✅ Gesture Mapped to Text:', translatedWord);
+        
+        setDetectedGesture(gesture);
+        
+        // Update current chunk immediately
+        setCurrentChunk(prev => {
+          const newChunk: ConversationChunk = {
+            gestures: prev ? [...prev.gestures, gesture] : [gesture],
+            text: prev ? `${prev.text} ${translatedWord}`.trim() : translatedWord,
+            timestamp: Date.now(),
+          };
+          return newChunk;
+        });
+        
+        // Update translated text immediately
+        setTranslatedText(prev => {
+          const newText = `${prev ? prev + ' ' : ''}${translatedWord}`.trim();
+          console.log('✅ Text Rendered:', newText);
+          return newText;
+        });
+        
+        resetChunkTimeout();
       }
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Unknown processing error';
@@ -142,8 +134,8 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       const pinkyTip = landmarks[20];
       const wrist = landmarks[0];
 
-      // More lenient thresholds for better detection
-      const threshold = 0.15;
+      // More lenient thresholds
+      const threshold = 0.1;
       
       // Check if fingers are raised relative to the wrist
       const thumbUp = thumbTip.y < wrist.y;
