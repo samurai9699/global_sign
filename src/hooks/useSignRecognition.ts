@@ -91,65 +91,44 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       const gesture = recognizeGestureFromLandmarks(landmarks);
       
       if (gesture) {
-  const currentGestureName = gesture.name;
+        const currentGestureName = gesture.name;
+        const translatedWord = ASL_TO_ENGLISH_MAPPING[currentGestureName];
 
-  // Increment the count for the current gesture
-  gestureCountRef.current[currentGestureName] = (gestureCountRef.current[currentGestureName] || 0) + 1;
+        // Increment the count for the current gesture
+        gestureCountRef.current[currentGestureName] = (gestureCountRef.current[currentGestureName] || 0) + 1;
 
-  // Check if the same gesture has appeared for enough frames
-  if (
-    lastGestureRef.current === currentGestureName &&
-    gestureCountRef.current[currentGestureName] >= GESTURE_STABILITY_THRESHOLD
-  ) {
-    console.log('✅ Stable Gesture Confirmed:', currentGestureName);
+        // Check if the same gesture has appeared for enough frames
+        if (
+          lastGestureRef.current === currentGestureName &&
+          gestureCountRef.current[currentGestureName] >= GESTURE_STABILITY_THRESHOLD
+        ) {
+          console.log('✅ Stable Gesture Confirmed:', currentGestureName);
 
-    const translatedWord = ASL_TO_ENGLISH_MAPPING[currentGestureName];
-    setDetectedGesture(gesture);
+          setDetectedGesture(gesture);
 
-    setCurrentChunk(prev => {
-      const newChunk: ConversationChunk = {
-        gestures: prev ? [...prev.gestures, gesture] : [gesture],
-        text: prev ? `${prev.text} ${translatedWord}`.trim() : translatedWord,
-        timestamp: Date.now(),
-      };
-      return newChunk;
-    });
+          setCurrentChunk(prev => {
+            const newChunk: ConversationChunk = {
+              gestures: prev ? [...prev.gestures, gesture] : [gesture],
+              text: prev ? `${prev.text} ${translatedWord}`.trim() : translatedWord,
+              timestamp: Date.now(),
+            };
+            return newChunk;
+          });
 
-    setTranslatedText(prev => {
-      const newText = `${prev ? prev + ' ' : ''}${translatedWord}`.trim();
-      console.log('✅ Text Rendered:', newText);
-      return newText;
-    });
+          setTranslatedText(prev => {
+            const newText = `${prev ? prev + ' ' : ''}${translatedWord}`.trim();
+            console.log('✅ Text Rendered:', newText);
+            return newText;
+          });
 
-    resetChunkTimeout();
+          resetChunkTimeout();
 
-    // Reset gesture counts after recognition
-    gestureCountRef.current = {};
-    lastGestureRef.current = null;
-  } else {
-    lastGestureRef.current = currentGestureName;
-  }
-}
-
-        
-        // Update current chunk immediately
-        setCurrentChunk(prev => {
-          const newChunk: ConversationChunk = {
-            gestures: prev ? [...prev.gestures, gesture] : [gesture],
-            text: prev ? `${prev.text} ${translatedWord}`.trim() : translatedWord,
-            timestamp: Date.now(),
-          };
-          return newChunk;
-        });
-        
-        // Update translated text immediately
-        setTranslatedText(prev => {
-          const newText = `${prev ? prev + ' ' : ''}${translatedWord}`.trim();
-          console.log('✅ Text Rendered:', newText);
-          return newText;
-        });
-        
-        resetChunkTimeout();
+          // Reset gesture counts after recognition
+          gestureCountRef.current = {};
+          lastGestureRef.current = null;
+        } else {
+          lastGestureRef.current = currentGestureName;
+        }
       }
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Unknown processing error';
