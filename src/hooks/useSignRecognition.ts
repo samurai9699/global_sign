@@ -4,8 +4,8 @@ import { HandGesture, ConversationChunk } from '../types';
 import { ASL_TO_ENGLISH_MAPPING } from '../utils/constants';
 
 const CHUNK_TIMEOUT = 1500; // 1.5 seconds for natural chunking
-const CONFIDENCE_THRESHOLD = 0.7; // Increased threshold for better accuracy
-const GESTURE_STABILITY_THRESHOLD = 3; // Increased for more stable recognition
+const CONFIDENCE_THRESHOLD = 0.6; // Lowered threshold for better responsiveness
+const GESTURE_STABILITY_THRESHOLD = 2; // Lowered for faster recognition
 const IDLE_TIMEOUT = 5000; // 5 seconds before showing "No gesture detected"
 
 export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) {
@@ -59,8 +59,8 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       hands.setOptions({
         maxNumHands: 1,
         modelComplexity: 1,
-        minDetectionConfidence: 0.7,
-        minTrackingConfidence: 0.7,
+        minDetectionConfidence: 0.5, // Lowered for better detection
+        minTrackingConfidence: 0.5,
       });
 
       hands.onResults((results: Results) => {
@@ -92,6 +92,8 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
         const currentGestureName = gesture.name;
         const translatedWord = ASL_TO_ENGLISH_MAPPING[currentGestureName];
 
+        if (!translatedWord) return; // Skip if no translation available
+
         gestureCountRef.current[currentGestureName] = (gestureCountRef.current[currentGestureName] || 0) + 1;
 
         if (lastGestureRef.current === currentGestureName) {
@@ -117,10 +119,20 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
             return newText;
           });
 
-          resetChunkTimeout();
-
+          // Reset after successful detection
           gestureCountRef.current = {};
           gestureStabilityCountRef.current = 0;
+          
+          if (chunkTimeoutRef.current) {
+            clearTimeout(chunkTimeoutRef.current);
+          }
+          
+          chunkTimeoutRef.current = setTimeout(() => {
+            setCurrentChunk(null);
+            lastGestureRef.current = null;
+            gestureCountRef.current = {};
+            gestureStabilityCountRef.current = 0;
+          }, CHUNK_TIMEOUT);
         }
 
         lastGestureRef.current = currentGestureName;
@@ -141,7 +153,7 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       const pinkyTip = landmarks[20];
       const wrist = landmarks[0];
 
-      const threshold = 0.15;
+      const threshold = 0.2; // Increased threshold for more lenient detection
       
       const thumbUp = thumbTip.y < wrist.y - threshold;
       const indexUp = indexTip.y < wrist.y - threshold;
@@ -191,19 +203,6 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       throw new Error(`Failed to recognize gesture: ${err}`);
     }
   };
-
-  const resetChunkTimeout = useCallback(() => {
-    if (chunkTimeoutRef.current) {
-      clearTimeout(chunkTimeoutRef.current);
-    }
-    
-    chunkTimeoutRef.current = setTimeout(() => {
-      setCurrentChunk(null);
-      lastGestureRef.current = null;
-      gestureCountRef.current = {};
-      gestureStabilityCountRef.current = 0;
-    }, CHUNK_TIMEOUT);
-  }, []);
 
   const startProcessing = useCallback(async () => {
     if (!videoRef.current || !handsRef.current) {

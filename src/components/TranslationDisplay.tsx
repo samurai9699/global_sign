@@ -29,7 +29,7 @@ const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
   if (isIdle) {
     return (
       <div className="p-4 bg-gray-50 border border-gray-200 rounded-md">
-        <p className="text-gray-500 text-center">No gesture detected</p>
+        <p className="text-gray-500 text-center">Make a gesture to start translation</p>
       </div>
     );
   }
@@ -37,25 +37,18 @@ const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
   if (isLoading || (currentChunk && currentChunk.gestures.length > 0)) {
     return (
       <div className="p-6 bg-white border border-gray-200 rounded-md">
-        <div id="translation-output" className="mb-4 p-3 bg-primary-50 rounded-md">
+        <div className="mb-4 p-3 bg-primary-50 rounded-md">
           <p className="text-primary-700 font-medium">
             {currentChunk && currentChunk.gestures.length > 0
-              ? `Current gesture: ${ASL_TO_ENGLISH_MAPPING[currentChunk.gestures[currentChunk.gestures.length - 1].name]}`
-              : 'Processing...'}
+              ? `Detected gesture: ${ASL_TO_ENGLISH_MAPPING[currentChunk.gestures[currentChunk.gestures.length - 1].name]}`
+              : 'Waiting for gestures...'}
           </p>
-        </div>
-        
-        <div className="flex items-center justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-          <span className="ml-3 text-gray-700">
-            {currentChunk ? 'Processing signs...' : 'Translating...'}
-          </span>
         </div>
         
         {currentChunk && currentChunk.gestures.length > 0 && (
           <div className="mt-4">
             <div className="flex flex-wrap gap-2">
-              {currentChunk.gestures.slice(-5).map((gesture, index) => (
+              {currentChunk.gestures.map((gesture, index) => (
                 <div
                   key={index}
                   className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
@@ -65,7 +58,7 @@ const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
                   }`}
                 >
                   {ASL_TO_ENGLISH_MAPPING[gesture.name]}
-                  {gesture.confidence > 0.9 && (
+                  {gesture.confidence > 0.8 && (
                     <span className="ml-1 text-success-500">✓</span>
                   )}
                 </div>
@@ -77,57 +70,50 @@ const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
                 ? '1 gesture detected'
                 : `${currentChunk.gestures.length} gestures detected`}
             </div>
+            
+            {currentChunk.text && (
+              <div className="mt-4 p-3 bg-success-50 rounded-md">
+                <p className="text-success-700 font-medium">
+                  Translation: {currentChunk.text}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
     );
   }
 
-  if (!result || (!result.original && !result.translated)) {
+  if (!result && !currentChunk) {
     return (
-      <div className="p-6 bg-white border border-gray-200 rounded-md text-center text-gray-500">
-        <p>Make signs to start translation</p>
+      <div className="p-6 bg-white border border-gray-200 rounded-md">
+        <div className="flex items-center justify-center space-x-4">
+          <p className="text-gray-500">Ready to translate</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="p-4 bg-white border border-gray-200 rounded-md">
-      <div id="translation-output" className="mb-4">
-        <h3 className="text-sm font-medium text-gray-500 mb-1">Original:</h3>
-        <p className="text-lg font-medium text-gray-900">{result.original}</p>
-      </div>
-      
-      <div className="pt-4 border-t border-gray-200">
-        <h3 className="text-sm font-medium text-gray-500 mb-1">Translated:</h3>
-        <p className="text-lg font-medium text-primary-700">
-          {result.translated}
-          {result.isPartial && (
-            <span className="text-sm text-gray-500 ml-2">(processing...)</span>
-          )}
-        </p>
-        
-        {result.confidence && (
-          <div className="mt-2 flex items-center">
-            <span className="text-xs text-gray-500 mr-2">Confidence:</span>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className={`h-2 rounded-full ${
-                  result.confidence > 0.7
-                    ? 'bg-success-500'
-                    : result.confidence > 0.4
-                    ? 'bg-warning-500'
-                    : 'bg-error-500'
-                }`}
-                style={{ width: `${result.confidence * 100}%` }}
-              ></div>
-            </div>
-            <span className="ml-2 text-xs text-gray-500">
-              {Math.round(result.confidence * 100)}%
-            </span>
+      {result && (
+        <>
+          <div className="mb-4">
+            <h3 className="text-sm font-medium text-gray-500 mb-1">Original:</h3>
+            <p className="text-lg font-medium text-gray-900">{result.original}</p>
           </div>
-        )}
-      </div>
+          
+          <div className="pt-4 border-t border-gray-200">
+            <h3 className="text-sm font-medium text-gray-500 mb-1">Translated:</h3>
+            <p className="text-lg font-medium text-primary-700">
+              {result.translated}
+              {result.isPartial && (
+                <span className="text-sm text-gray-500 ml-2">(processing...)</span>
+              )}
+            </p>
+          </div>
+        </>
+      )}
     </div>
   );
 };
