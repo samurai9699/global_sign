@@ -4,9 +4,9 @@ import { HandGesture, ConversationChunk } from '../types';
 import { ASL_TO_ENGLISH_MAPPING } from '../utils/constants';
 
 const CHUNK_TIMEOUT = 1500; // 1.5 seconds for natural chunking
-const CONFIDENCE_THRESHOLD = 0.5; // Lowered for better responsiveness
+const CONFIDENCE_THRESHOLD = 0.4; // Lowered for better responsiveness
 const GESTURE_STABILITY_THRESHOLD = 2; // Lowered for faster recognition
-const IDLE_TIMEOUT = 5000; // 5 seconds before showing "No gesture detected"
+const IDLE_TIMEOUT = 3000; // Reduced to 3 seconds for better responsiveness
 
 export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -59,8 +59,8 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       hands.setOptions({
         maxNumHands: 1,
         modelComplexity: 1,
-        minDetectionConfidence: 0.4, // Lowered for better detection
-        minTrackingConfidence: 0.4, // Lowered for better tracking
+        minDetectionConfidence: 0.3, // Further lowered for better detection
+        minTrackingConfidence: 0.3, // Further lowered for better tracking
       });
 
       hands.onResults((results: Results) => {
@@ -153,48 +153,46 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       const pinkyTip = landmarks[20];
       const wrist = landmarks[0];
 
-      const threshold = 0.15; // Smaller threshold for more sensitive detection
+      const threshold = 0.1; // Reduced threshold for more sensitive detection
       
       const thumbUp = thumbTip.y < wrist.y - threshold;
+      const thumbDown = thumbTip.y > wrist.y + threshold;
       const indexUp = indexTip.y < wrist.y - threshold;
       const middleUp = middleTip.y < wrist.y - threshold;
       const ringUp = ringTip.y < wrist.y - threshold;
       const pinkyUp = pinkyTip.y < wrist.y - threshold;
 
-      // Open palm (hello)
-      if (indexUp && middleUp && ringUp && pinkyUp) {
-        return {
-          name: 'open_palm',
-          confidence: 0.9,
-          timestamp: Date.now(),
-        };
-      }
-
-      // Thumbs up
+      // Detect more gestures with improved conditions
       if (thumbUp && !indexUp && !middleUp && !ringUp && !pinkyUp) {
-        return {
-          name: 'thumbs_up',
-          confidence: 0.9,
-          timestamp: Date.now(),
-        };
+        return { name: 'thumbs_up', confidence: 0.9, timestamp: Date.now() };
       }
 
-      // Victory/Peace sign
+      if (thumbDown && !indexUp && !middleUp && !ringUp && !pinkyUp) {
+        return { name: 'thumbs_down', confidence: 0.9, timestamp: Date.now() };
+      }
+
       if (!thumbUp && indexUp && middleUp && !ringUp && !pinkyUp) {
-        return {
-          name: 'victory',
-          confidence: 0.9,
-          timestamp: Date.now(),
-        };
+        return { name: 'victory', confidence: 0.9, timestamp: Date.now() };
       }
 
-      // Pointing up
       if (!thumbUp && indexUp && !middleUp && !ringUp && !pinkyUp) {
-        return {
-          name: 'pointing_up',
-          confidence: 0.9,
-          timestamp: Date.now(),
-        };
+        return { name: 'pointing_up', confidence: 0.9, timestamp: Date.now() };
+      }
+
+      if (indexUp && middleUp && ringUp && pinkyUp) {
+        return { name: 'open_palm', confidence: 0.9, timestamp: Date.now() };
+      }
+
+      if (!indexUp && !middleUp && !ringUp && !pinkyUp) {
+        return { name: 'closed_fist', confidence: 0.9, timestamp: Date.now() };
+      }
+
+      if (thumbTip.x < indexTip.x && Math.abs(thumbTip.y - indexTip.y) < 0.1) {
+        return { name: 'ok_sign', confidence: 0.9, timestamp: Date.now() };
+      }
+
+      if (indexUp && middleUp && ringUp && pinkyUp && Math.abs(indexTip.x - pinkyTip.x) > 0.3) {
+        return { name: 'spread_fingers', confidence: 0.9, timestamp: Date.now() };
       }
 
       return null;
