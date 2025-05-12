@@ -4,8 +4,8 @@ import { HandGesture, ConversationChunk } from '../types';
 import { ASL_TO_ENGLISH_MAPPING } from '../utils/constants';
 
 const CHUNK_TIMEOUT = 1500; // 1.5 seconds for natural chunking
-const CONFIDENCE_THRESHOLD = 0.5; // Lowered threshold for better detection
-const GESTURE_STABILITY_THRESHOLD = 1; // Reduced for faster response
+const CONFIDENCE_THRESHOLD = 0.7; // Increased threshold for better accuracy
+const GESTURE_STABILITY_THRESHOLD = 3; // Increased for more stable recognition
 const IDLE_TIMEOUT = 5000; // 5 seconds before showing "No gesture detected"
 
 export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) {
@@ -31,7 +31,6 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
     }
     setIsIdle(false);
     idleTimeoutRef.current = setTimeout(() => {
-      console.log('✅ System Idle: No gesture detected for 5 seconds');
       setIsIdle(true);
     }, IDLE_TIMEOUT);
   }, []);
@@ -53,16 +52,15 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
 
   const initializeHands = useCallback(async () => {
     try {
-      console.log('Initializing MediaPipe Hands');
       const hands = new Hands({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
       });
 
       hands.setOptions({
         maxNumHands: 1,
-        modelComplexity: 0, // Reduced for better performance
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.7,
       });
 
       hands.onResults((results: Results) => {
@@ -94,16 +92,15 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
         const currentGestureName = gesture.name;
         const translatedWord = ASL_TO_ENGLISH_MAPPING[currentGestureName];
 
-        // Increment the count for the current gesture
         gestureCountRef.current[currentGestureName] = (gestureCountRef.current[currentGestureName] || 0) + 1;
 
-        // Check if the same gesture has appeared for enough frames
-        if (
-          lastGestureRef.current === currentGestureName &&
-          gestureCountRef.current[currentGestureName] >= GESTURE_STABILITY_THRESHOLD
-        ) {
-          console.log('✅ Stable Gesture Confirmed:', currentGestureName);
+        if (lastGestureRef.current === currentGestureName) {
+          gestureStabilityCountRef.current++;
+        } else {
+          gestureStabilityCountRef.current = 1;
+        }
 
+        if (gestureStabilityCountRef.current >= GESTURE_STABILITY_THRESHOLD) {
           setDetectedGesture(gesture);
 
           setCurrentChunk(prev => {
@@ -117,18 +114,16 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
 
           setTranslatedText(prev => {
             const newText = `${prev ? prev + ' ' : ''}${translatedWord}`.trim();
-            console.log('✅ Text Rendered:', newText);
             return newText;
           });
 
           resetChunkTimeout();
 
-          // Reset gesture counts after recognition
           gestureCountRef.current = {};
-          lastGestureRef.current = null;
-        } else {
-          lastGestureRef.current = currentGestureName;
+          gestureStabilityCountRef.current = 0;
         }
+
+        lastGestureRef.current = currentGestureName;
       }
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Unknown processing error';
@@ -146,11 +141,9 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       const pinkyTip = landmarks[20];
       const wrist = landmarks[0];
 
-      // More lenient thresholds
-      const threshold = 0.1;
+      const threshold = 0.15;
       
-      // Check if fingers are raised relative to the wrist
-      const thumbUp = thumbTip.y < wrist.y;
+      const thumbUp = thumbTip.y < wrist.y - threshold;
       const indexUp = indexTip.y < wrist.y - threshold;
       const middleUp = middleTip.y < wrist.y - threshold;
       const ringUp = ringTip.y < wrist.y - threshold;
