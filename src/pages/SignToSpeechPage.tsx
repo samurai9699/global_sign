@@ -118,17 +118,18 @@ const SignToSpeechPage: React.FC = () => {
             onStreamReady={(stream) => {
               if (videoRef.current) {
                 videoRef.current.srcObject = stream;
+                videoRef.current.play().catch(console.error);
               }
             }}
           />
+          <video 
+            ref={videoRef} 
+            className="hidden" 
+            autoPlay 
+            playsInline 
+            muted
+          />
           <div className="mt-4">
-            <video 
-              ref={videoRef} 
-              className="hidden" 
-              autoPlay 
-              playsInline 
-              muted 
-            />
             {webcamActive ? (
               isTranslating ? (
                 <button
