@@ -66,6 +66,27 @@ const SignToSpeechPage: React.FC = () => {
     setStatus('idle');
   };
 
+  const handleStreamReady = (stream: MediaStream) => {
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      
+      // Only attempt to play if the video is ready and not already playing
+      const playVideo = () => {
+        if (videoRef.current && videoRef.current.readyState === 4 && videoRef.current.paused) {
+          videoRef.current.play().catch(error => {
+            console.error('Error playing video:', error);
+          });
+        }
+      };
+
+      // Add event listener for when enough data is available
+      videoRef.current.addEventListener('canplay', playVideo);
+      
+      // Try to play immediately if the video is already ready
+      playVideo();
+    }
+  };
+
   useEffect(() => {
     if (translatedText && isTranslating) {
       const newResult: TranslationResult = {
@@ -115,12 +136,7 @@ const SignToSpeechPage: React.FC = () => {
           <WebcamComponent
             isActive={webcamActive}
             onToggle={handleToggleWebcam}
-            onStreamReady={(stream) => {
-              if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                videoRef.current.play().catch(console.error);
-              }
-            }}
+            onStreamReady={handleStreamReady}
           />
           <video 
             ref={videoRef} 
