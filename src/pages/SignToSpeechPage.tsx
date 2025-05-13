@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import WebcamComponent from '../components/WebcamComponent';
 import TranslationDisplay from '../components/TranslationDisplay';
 import LanguageSelector from '../components/LanguageSelector';
@@ -27,6 +27,7 @@ const SignToSpeechPage: React.FC = () => {
   
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const ttsTimeoutRef = React.useRef<NodeJS.Timeout>();
   
   const {
     isProcessing,
@@ -64,6 +65,11 @@ const SignToSpeechPage: React.FC = () => {
     stopProcessing();
     setIsTranslating(false);
     setStatus('idle');
+    
+    // Clear any pending TTS timeout
+    if (ttsTimeoutRef.current) {
+      clearTimeout(ttsTimeoutRef.current);
+    }
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -87,6 +93,28 @@ const SignToSpeechPage: React.FC = () => {
     }
   };
 
+  const debouncedTextToSpeech = useCallback((text: string) => {
+    // Clear any existing timeout
+    if (ttsTimeoutRef.current) {
+      clearTimeout(ttsTimeoutRef.current);
+    }
+
+    // Set a new timeout
+    ttsTimeoutRef.current = setTimeout(() => {
+      textToSpeech({
+        text,
+        lang: spokenLanguage.code,
+        onError: (error) => {
+          // Only set error for non-cancellation errors
+          if (!error.toLowerCase().includes('cancel') && !error.toLowerCase().includes('interrupt')) {
+            console.error('TTS error:', error);
+            setError(error);
+          }
+        },
+      });
+    }, 500); // 500ms debounce delay
+  }, [spokenLanguage.code, setError]);
+
   useEffect(() => {
     if (translatedText && isTranslating) {
       const newResult: TranslationResult = {
@@ -98,16 +126,9 @@ const SignToSpeechPage: React.FC = () => {
       setTranslationResult(newResult);
       setStatus('success');
       
-      textToSpeech({
-        text: translatedText,
-        lang: spokenLanguage.code,
-        onError: (error) => {
-          console.error('TTS error:', error);
-          setError(error);
-        },
-      });
+      debouncedTextToSpeech(translatedText);
     }
-  }, [translatedText, detectedGesture, isTranslating, spokenLanguage, setTranslationResult, setError]);
+  }, [translatedText, detectedGesture, isTranslating, debouncedTextToSpeech, setTranslationResult]);
 
   useEffect(() => {
     if (recognitionError) {
@@ -115,6 +136,15 @@ const SignToSpeechPage: React.FC = () => {
       setStatus('error');
     }
   }, [recognitionError, setError]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (ttsTimeoutRef.current) {
+        clearTimeout(ttsTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="container mx-auto px-4 py-8">

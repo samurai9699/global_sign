@@ -46,9 +46,10 @@ export const textToSpeech = ({
     };
 
     utterance.onerror = (event) => {
-      const error = `Speech synthesis error: ${event.error}`;
-      onError?.(error);
-      reject(new Error(error));
+      // Use the specific error message from the event
+      const errorMessage = event.error || 'Unknown speech synthesis error';
+      onError?.(errorMessage);
+      reject(new Error(`Speech synthesis error: ${errorMessage}`));
     };
 
     window.speechSynthesis.speak(utterance);
