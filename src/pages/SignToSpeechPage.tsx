@@ -35,6 +35,7 @@ const SignToSpeechPage: React.FC = () => {
     error: recognitionError,
     currentChunk,
     isIdle,
+    debugInfo,
     startProcessing,
     stopProcessing,
   } = useSignRecognition(videoRef);
@@ -65,7 +66,6 @@ const SignToSpeechPage: React.FC = () => {
     setStatus('idle');
   };
 
-  // When a translation is detected, speak it out loud
   useEffect(() => {
     if (translatedText && isTranslating) {
       const newResult: TranslationResult = {
@@ -77,7 +77,6 @@ const SignToSpeechPage: React.FC = () => {
       setTranslationResult(newResult);
       setStatus('success');
       
-      // Convert the translated text to speech
       textToSpeech({
         text: translatedText,
         lang: spokenLanguage.code,
@@ -89,7 +88,6 @@ const SignToSpeechPage: React.FC = () => {
     }
   }, [translatedText, detectedGesture, isTranslating, spokenLanguage, setTranslationResult, setError]);
 
-  // Handle errors
   useEffect(() => {
     if (recognitionError) {
       setError(recognitionError);
@@ -186,6 +184,7 @@ const SignToSpeechPage: React.FC = () => {
               error={null}
               currentChunk={currentChunk}
               isIdle={isIdle}
+              debugInfo={debugInfo}
             />
           </div>
         </div>

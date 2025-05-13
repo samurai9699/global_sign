@@ -8,6 +8,7 @@ interface TranslationDisplayProps {
   error: string | null;
   currentChunk?: ConversationChunk | null;
   isIdle?: boolean;
+  debugInfo?: string;
 }
 
 const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
@@ -16,6 +17,7 @@ const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
   error,
   currentChunk,
   isIdle,
+  debugInfo,
 }) => {
   if (error) {
     return (
@@ -34,8 +36,8 @@ const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
     );
   }
 
-  if (isLoading || (currentChunk && currentChunk.gestures.length > 0)) {
-    return (
+  return (
+    <div className="space-y-4">
       <div className="p-6 bg-white border border-gray-200 rounded-md">
         <div className="mb-4 p-3 bg-primary-50 rounded-md">
           <p className="text-primary-700 font-medium">
@@ -81,38 +83,12 @@ const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
           </div>
         )}
       </div>
-    );
-  }
 
-  if (!result && !currentChunk) {
-    return (
-      <div className="p-6 bg-white border border-gray-200 rounded-md">
-        <div className="flex items-center justify-center space-x-4">
-          <p className="text-gray-500">Ready to translate</p>
+      {debugInfo && (
+        <div className="p-4 bg-gray-50 border border-gray-200 rounded-md">
+          <h4 className="text-sm font-medium text-gray-700 mb-2">Debug Information</h4>
+          <p className="text-sm text-gray-600">{debugInfo}</p>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-4 bg-white border border-gray-200 rounded-md">
-      {result && (
-        <>
-          <div className="mb-4">
-            <h3 className="text-sm font-medium text-gray-500 mb-1">Original:</h3>
-            <p className="text-lg font-medium text-gray-900">{result.original}</p>
-          </div>
-          
-          <div className="pt-4 border-t border-gray-200">
-            <h3 className="text-sm font-medium text-gray-500 mb-1">Translated:</h3>
-            <p className="text-lg font-medium text-primary-700">
-              {result.translated}
-              {result.isPartial && (
-                <span className="text-sm text-gray-500 ml-2">(processing...)</span>
-              )}
-            </p>
-          </div>
-        </>
       )}
     </div>
   );

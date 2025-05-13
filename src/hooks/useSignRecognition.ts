@@ -3,10 +3,10 @@ import { Hands, Results } from '@mediapipe/hands';
 import { HandGesture, ConversationChunk } from '../types';
 import { ASL_TO_ENGLISH_MAPPING } from '../utils/constants';
 
-const CHUNK_TIMEOUT = 1500; // 1.5 seconds for natural chunking
-const CONFIDENCE_THRESHOLD = 0.4; // Lowered for better responsiveness
-const GESTURE_STABILITY_THRESHOLD = 2; // Lowered for faster recognition
-const IDLE_TIMEOUT = 3000; // Reduced to 3 seconds for better responsiveness
+const CHUNK_TIMEOUT = 1500;
+const CONFIDENCE_THRESHOLD = 0.3;
+const GESTURE_STABILITY_THRESHOLD = 2;
+const IDLE_TIMEOUT = 3000;
 
 export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -15,6 +15,7 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
   const [error, setError] = useState<string | null>(null);
   const [currentChunk, setCurrentChunk] = useState<ConversationChunk | null>(null);
   const [isIdle, setIsIdle] = useState(true);
+  const [debugInfo, setDebugInfo] = useState<string>('');
   
   const handsRef = useRef<Hands | null>(null);
   const processingRef = useRef<boolean>(false);
@@ -59,8 +60,8 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       hands.setOptions({
         maxNumHands: 1,
         modelComplexity: 1,
-        minDetectionConfidence: 0.3, // Further lowered for better detection
-        minTrackingConfidence: 0.3, // Further lowered for better tracking
+        minDetectionConfidence: 0.3,
+        minTrackingConfidence: 0.3,
       });
 
       hands.onResults((results: Results) => {
@@ -69,10 +70,10 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       });
 
       handsRef.current = hands;
-      console.log('✅ MediaPipe Hands initialized successfully');
+      setDebugInfo('MediaPipe Hands initialized');
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Unknown initialization error';
-      console.error('❌ Failed to initialize MediaPipe Hands:', error);
+      console.error('Failed to initialize MediaPipe Hands:', error);
       setError(`Failed to initialize hand tracking: ${error}`);
     }
   }, []);
@@ -82,28 +83,29 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       resetIdleTimeout();
 
       if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+        setDebugInfo('No hands detected');
         return;
       }
 
       const landmarks = results.multiHandLandmarks[0];
+      setDebugInfo(`Processing landmarks: ${landmarks.length} points detected`);
+
       const gesture = recognizeGestureFromLandmarks(landmarks);
       
       if (gesture) {
         const currentGestureName = gesture.name;
-        const translatedWord = ASL_TO_ENGLISH_MAPPING[currentGestureName];
-
-        if (!translatedWord) return;
-
-        gestureCountRef.current[currentGestureName] = (gestureCountRef.current[currentGestureName] || 0) + 1;
+        setDebugInfo(`Detected gesture: ${currentGestureName}`);
 
         if (lastGestureRef.current === currentGestureName) {
           gestureStabilityCountRef.current++;
+          setDebugInfo(`Stability count: ${gestureStabilityCountRef.current}`);
         } else {
           gestureStabilityCountRef.current = 1;
         }
 
         if (gestureStabilityCountRef.current >= GESTURE_STABILITY_THRESHOLD) {
           setDetectedGesture(gesture);
+          const translatedWord = ASL_TO_ENGLISH_MAPPING[currentGestureName];
 
           setCurrentChunk(prev => {
             const newChunk: ConversationChunk = {
@@ -119,10 +121,6 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
             return newText;
           });
 
-          // Reset after successful detection
-          gestureCountRef.current = {};
-          gestureStabilityCountRef.current = 0;
-          
           if (chunkTimeoutRef.current) {
             clearTimeout(chunkTimeoutRef.current);
           }
@@ -130,76 +128,65 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
           chunkTimeoutRef.current = setTimeout(() => {
             setCurrentChunk(null);
             lastGestureRef.current = null;
-            gestureCountRef.current = {};
             gestureStabilityCountRef.current = 0;
           }, CHUNK_TIMEOUT);
         }
 
         lastGestureRef.current = currentGestureName;
+      } else {
+        setDebugInfo('No gesture recognized from landmarks');
       }
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Unknown processing error';
-      console.error('❌ Error processing hand results:', error);
+      console.error('Error processing hand results:', error);
       setError(`Error processing gestures: ${error}`);
     }
   }, [resetIdleTimeout]);
 
   const recognizeGestureFromLandmarks = (landmarks: any): HandGesture | null => {
-    try {
-      const thumbTip = landmarks[4];
-      const indexTip = landmarks[8];
-      const middleTip = landmarks[12];
-      const ringTip = landmarks[16];
-      const pinkyTip = landmarks[20];
-      const wrist = landmarks[0];
+    const thumbTip = landmarks[4];
+    const indexTip = landmarks[8];
+    const middleTip = landmarks[12];
+    const ringTip = landmarks[16];
+    const pinkyTip = landmarks[20];
+    const wrist = landmarks[0];
 
-      const threshold = 0.1; // Reduced threshold for more sensitive detection
-      
-      const thumbUp = thumbTip.y < wrist.y - threshold;
-      const thumbDown = thumbTip.y > wrist.y + threshold;
-      const indexUp = indexTip.y < wrist.y - threshold;
-      const middleUp = middleTip.y < wrist.y - threshold;
-      const ringUp = ringTip.y < wrist.y - threshold;
-      const pinkyUp = pinkyTip.y < wrist.y - threshold;
+    const threshold = 0.1;
+    
+    const thumbUp = thumbTip.y < wrist.y - threshold;
+    const thumbDown = thumbTip.y > wrist.y + threshold;
+    const indexUp = indexTip.y < wrist.y - threshold;
+    const middleUp = middleTip.y < wrist.y - threshold;
+    const ringUp = ringTip.y < wrist.y - threshold;
+    const pinkyUp = pinkyTip.y < wrist.y - threshold;
 
-      // Detect more gestures with improved conditions
-      if (thumbUp && !indexUp && !middleUp && !ringUp && !pinkyUp) {
-        return { name: 'thumbs_up', confidence: 0.9, timestamp: Date.now() };
-      }
+    setDebugInfo(`Finger positions - Thumb: ${thumbUp ? 'up' : 'down'}, Index: ${indexUp ? 'up' : 'down'}, Middle: ${middleUp ? 'up' : 'down'}`);
 
-      if (thumbDown && !indexUp && !middleUp && !ringUp && !pinkyUp) {
-        return { name: 'thumbs_down', confidence: 0.9, timestamp: Date.now() };
-      }
-
-      if (!thumbUp && indexUp && middleUp && !ringUp && !pinkyUp) {
-        return { name: 'victory', confidence: 0.9, timestamp: Date.now() };
-      }
-
-      if (!thumbUp && indexUp && !middleUp && !ringUp && !pinkyUp) {
-        return { name: 'pointing_up', confidence: 0.9, timestamp: Date.now() };
-      }
-
-      if (indexUp && middleUp && ringUp && pinkyUp) {
-        return { name: 'open_palm', confidence: 0.9, timestamp: Date.now() };
-      }
-
-      if (!indexUp && !middleUp && !ringUp && !pinkyUp) {
-        return { name: 'closed_fist', confidence: 0.9, timestamp: Date.now() };
-      }
-
-      if (thumbTip.x < indexTip.x && Math.abs(thumbTip.y - indexTip.y) < 0.1) {
-        return { name: 'ok_sign', confidence: 0.9, timestamp: Date.now() };
-      }
-
-      if (indexUp && middleUp && ringUp && pinkyUp && Math.abs(indexTip.x - pinkyTip.x) > 0.3) {
-        return { name: 'spread_fingers', confidence: 0.9, timestamp: Date.now() };
-      }
-
-      return null;
-    } catch (err) {
-      console.error('❌ Error recognizing gesture:', err);
-      throw new Error(`Failed to recognize gesture: ${err}`);
+    if (thumbUp && !indexUp && !middleUp && !ringUp && !pinkyUp) {
+      return { name: 'thumbs_up', confidence: 0.9, timestamp: Date.now() };
     }
+
+    if (thumbDown && !indexUp && !middleUp && !ringUp && !pinkyUp) {
+      return { name: 'thumbs_down', confidence: 0.9, timestamp: Date.now() };
+    }
+
+    if (!thumbUp && indexUp && middleUp && !ringUp && !pinkyUp) {
+      return { name: 'victory', confidence: 0.9, timestamp: Date.now() };
+    }
+
+    if (!thumbUp && indexUp && !middleUp && !ringUp && !pinkyUp) {
+      return { name: 'pointing_up', confidence: 0.9, timestamp: Date.now() };
+    }
+
+    if (indexUp && middleUp && ringUp && pinkyUp) {
+      return { name: 'open_palm', confidence: 0.9, timestamp: Date.now() };
+    }
+
+    if (!indexUp && !middleUp && !ringUp && !pinkyUp) {
+      return { name: 'closed_fist', confidence: 0.9, timestamp: Date.now() };
+    }
+
+    return null;
   };
 
   const startProcessing = useCallback(async () => {
@@ -209,7 +196,7 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
     }
     
     try {
-      console.log('✅ Starting gesture recognition');
+      setDebugInfo('Starting gesture recognition');
       setIsProcessing(true);
       processingRef.current = true;
       setCurrentChunk(null);
@@ -223,13 +210,13 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       processFrame();
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Unknown start error';
-      console.error('❌ Error starting gesture recognition:', error);
+      console.error('Error starting gesture recognition:', error);
       setError(`Failed to start gesture recognition: ${error}`);
     }
   }, [videoRef, resetIdleTimeout, processFrame]);
 
   const stopProcessing = useCallback(() => {
-    console.log('Stopping gesture recognition');
+    setDebugInfo('Stopping gesture recognition');
     setIsProcessing(false);
     processingRef.current = false;
     setDetectedGesture(null);
@@ -264,6 +251,7 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
     error,
     currentChunk,
     isIdle,
+    debugInfo,
     startProcessing,
     stopProcessing,
   };
