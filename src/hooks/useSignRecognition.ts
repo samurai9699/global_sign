@@ -7,6 +7,7 @@ const CHUNK_TIMEOUT = 1500;
 const CONFIDENCE_THRESHOLD = 0.3;
 const GESTURE_STABILITY_THRESHOLD = 2;
 const IDLE_TIMEOUT = 3000;
+const GESTURE_COOLDOWN = 2000; // Add cooldown period between gestures
 
 export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -25,6 +26,7 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
   const gestureCountRef = useRef<Record<string, number>>({});
   const gestureStabilityCountRef = useRef<number>(0);
   const animationFrameRef = useRef<number | null>(null);
+  const lastGestureTimeRef = useRef<number>(0);
 
   const resetIdleTimeout = useCallback(() => {
     if (idleTimeoutRef.current) {
@@ -33,6 +35,10 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
     setIsIdle(false);
     idleTimeoutRef.current = setTimeout(() => {
       setIsIdle(true);
+      // Reset gesture state when idle
+      lastGestureRef.current = null;
+      gestureStabilityCountRef.current = 0;
+      setDetectedGesture(null);
     }, IDLE_TIMEOUT);
   }, []);
 
@@ -91,10 +97,16 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       setDebugInfo(`Processing landmarks: ${landmarks.length} points detected`);
 
       const gesture = recognizeGestureFromLandmarks(landmarks);
+      const currentTime = Date.now();
       
       if (gesture) {
         const currentGestureName = gesture.name;
         setDebugInfo(`Detected gesture: ${currentGestureName}`);
+
+        // Check if enough time has passed since the last gesture
+        if (currentTime - lastGestureTimeRef.current < GESTURE_COOLDOWN) {
+          return;
+        }
 
         if (lastGestureRef.current === currentGestureName) {
           gestureStabilityCountRef.current++;
@@ -104,32 +116,40 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
         }
 
         if (gestureStabilityCountRef.current >= GESTURE_STABILITY_THRESHOLD) {
-          setDetectedGesture(gesture);
-          const translatedWord = ASL_TO_ENGLISH_MAPPING[currentGestureName];
+          // Only process if it's a new gesture or enough time has passed
+          if (lastGestureRef.current !== currentGestureName || 
+              currentTime - lastGestureTimeRef.current >= GESTURE_COOLDOWN) {
+            
+            setDetectedGesture(gesture);
+            const translatedWord = ASL_TO_ENGLISH_MAPPING[currentGestureName];
 
-          setCurrentChunk(prev => {
-            const newChunk: ConversationChunk = {
-              gestures: prev ? [...prev.gestures, gesture] : [gesture],
-              text: prev ? `${prev.text} ${translatedWord}`.trim() : translatedWord,
-              timestamp: Date.now(),
-            };
-            return newChunk;
-          });
+            setCurrentChunk(prev => {
+              const newChunk: ConversationChunk = {
+                gestures: prev ? [...prev.gestures, gesture] : [gesture],
+                text: prev ? `${prev.text} ${translatedWord}`.trim() : translatedWord,
+                timestamp: Date.now(),
+              };
+              return newChunk;
+            });
 
-          setTranslatedText(prev => {
-            const newText = `${prev ? prev + ' ' : ''}${translatedWord}`.trim();
-            return newText;
-          });
+            setTranslatedText(prev => {
+              const newText = `${prev ? prev + ' ' : ''}${translatedWord}`.trim();
+              return newText;
+            });
 
-          if (chunkTimeoutRef.current) {
-            clearTimeout(chunkTimeoutRef.current);
+            // Update last gesture time
+            lastGestureTimeRef.current = currentTime;
+
+            if (chunkTimeoutRef.current) {
+              clearTimeout(chunkTimeoutRef.current);
+            }
+            
+            chunkTimeoutRef.current = setTimeout(() => {
+              setCurrentChunk(null);
+              lastGestureRef.current = null;
+              gestureStabilityCountRef.current = 0;
+            }, CHUNK_TIMEOUT);
           }
-          
-          chunkTimeoutRef.current = setTimeout(() => {
-            setCurrentChunk(null);
-            lastGestureRef.current = null;
-            gestureStabilityCountRef.current = 0;
-          }, CHUNK_TIMEOUT);
         }
 
         lastGestureRef.current = currentGestureName;
@@ -203,6 +223,7 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       lastGestureRef.current = null;
       gestureCountRef.current = {};
       gestureStabilityCountRef.current = 0;
+      lastGestureTimeRef.current = 0;
       setTranslatedText('');
       setError(null);
       resetIdleTimeout();
@@ -225,6 +246,7 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
     lastGestureRef.current = null;
     gestureCountRef.current = {};
     gestureStabilityCountRef.current = 0;
+    lastGestureTimeRef.current = 0;
     
     if (chunkTimeoutRef.current) {
       clearTimeout(chunkTimeoutRef.current);
