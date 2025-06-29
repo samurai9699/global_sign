@@ -7,7 +7,7 @@ const CHUNK_TIMEOUT = 1500;
 const CONFIDENCE_THRESHOLD = 0.3;
 const GESTURE_STABILITY_THRESHOLD = 2;
 const IDLE_TIMEOUT = 3000;
-const GESTURE_COOLDOWN = 2000; // Add cooldown period between gestures
+const GESTURE_COOLDOWN = 500; // Reduced from 2000ms to 500ms for better responsiveness
 
 export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -84,6 +84,24 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
     }
   }, []);
 
+  // Helper function to check if a finger is extended
+  const isFingerExtended = (tipLandmark: any, mcpLandmark: any): boolean => {
+    return tipLandmark.y < mcpLandmark.y - 0.02; // Tip is significantly above MCP joint
+  };
+
+  // Helper function to check if a finger is curled
+  const isFingerCurled = (tipLandmark: any, mcpLandmark: any): boolean => {
+    return tipLandmark.y > mcpLandmark.y + 0.02; // Tip is significantly below MCP joint
+  };
+
+  // Helper function to check if thumb is extended (different logic due to thumb orientation)
+  const isThumbExtended = (thumbTip: any, thumbMcp: any, wrist: any): boolean => {
+    // For thumb, we check horizontal distance from wrist
+    const thumbDistance = Math.abs(thumbTip.x - wrist.x);
+    const mcpDistance = Math.abs(thumbMcp.x - wrist.x);
+    return thumbDistance > mcpDistance + 0.03;
+  };
+
   const processHandResults = useCallback((results: Results) => {
     try {
       resetIdleTimeout();
@@ -101,7 +119,6 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       
       if (gesture) {
         const currentGestureName = gesture.name;
-        setDebugInfo(`Detected gesture: ${currentGestureName}`);
 
         // Check if enough time has passed since the last gesture
         if (currentTime - lastGestureTimeRef.current < GESTURE_COOLDOWN) {
@@ -110,7 +127,6 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
 
         if (lastGestureRef.current === currentGestureName) {
           gestureStabilityCountRef.current++;
-          setDebugInfo(`Stability count: ${gestureStabilityCountRef.current}`);
         } else {
           gestureStabilityCountRef.current = 1;
         }
@@ -153,8 +169,6 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
         }
 
         lastGestureRef.current = currentGestureName;
-      } else {
-        setDebugInfo('No gesture recognized from landmarks');
       }
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Unknown processing error';
@@ -164,45 +178,58 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
   }, [resetIdleTimeout]);
 
   const recognizeGestureFromLandmarks = (landmarks: any): HandGesture | null => {
-    const thumbTip = landmarks[4];
-    const indexTip = landmarks[8];
-    const middleTip = landmarks[12];
-    const ringTip = landmarks[16];
-    const pinkyTip = landmarks[20];
+    // Hand landmark indices according to MediaPipe
     const wrist = landmarks[0];
+    const thumbTip = landmarks[4];
+    const thumbMcp = landmarks[2];
+    const indexTip = landmarks[8];
+    const indexMcp = landmarks[5];
+    const middleTip = landmarks[12];
+    const middleMcp = landmarks[9];
+    const ringTip = landmarks[16];
+    const ringMcp = landmarks[13];
+    const pinkyTip = landmarks[20];
+    const pinkyMcp = landmarks[17];
 
-    const threshold = 0.1;
+    // Determine finger states using more precise logic
+    const thumbExtended = isThumbExtended(thumbTip, thumbMcp, wrist);
+    const indexExtended = isFingerExtended(indexTip, indexMcp);
+    const middleExtended = isFingerExtended(middleTip, middleMcp);
+    const ringExtended = isFingerExtended(ringTip, ringMcp);
+    const pinkyExtended = isFingerExtended(pinkyTip, pinkyMcp);
+
+    // Update debug info with finger states
+    setDebugInfo(`Fingers - Thumb: ${thumbExtended ? 'Extended' : 'Curled'}, Index: ${indexExtended ? 'Extended' : 'Curled'}, Middle: ${middleExtended ? 'Extended' : 'Curled'}, Ring: ${ringExtended ? 'Extended' : 'Curled'}, Pinky: ${pinkyExtended ? 'Extended' : 'Curled'}`);
+
+    // Check for specific gestures in order of specificity (most specific first)
     
-    const thumbUp = thumbTip.y < wrist.y - threshold;
-    const thumbDown = thumbTip.y > wrist.y + threshold;
-    const indexUp = indexTip.y < wrist.y - threshold;
-    const middleUp = middleTip.y < wrist.y - threshold;
-    const ringUp = ringTip.y < wrist.y - threshold;
-    const pinkyUp = pinkyTip.y < wrist.y - threshold;
-
-    setDebugInfo(`Finger positions - Thumb: ${thumbUp ? 'up' : 'down'}, Index: ${indexUp ? 'up' : 'down'}, Middle: ${middleUp ? 'up' : 'down'}`);
-
-    if (thumbUp && !indexUp && !middleUp && !ringUp && !pinkyUp) {
-      return { name: 'thumbs_up', confidence: 0.9, timestamp: Date.now() };
-    }
-
-    if (thumbDown && !indexUp && !middleUp && !ringUp && !pinkyUp) {
-      return { name: 'thumbs_down', confidence: 0.9, timestamp: Date.now() };
-    }
-
-    if (!thumbUp && indexUp && middleUp && !ringUp && !pinkyUp) {
+    // Victory sign (peace) - Index and middle extended, others curled
+    if (!thumbExtended && indexExtended && middleExtended && !ringExtended && !pinkyExtended) {
       return { name: 'victory', confidence: 0.9, timestamp: Date.now() };
     }
 
-    if (!thumbUp && indexUp && !middleUp && !ringUp && !pinkyUp) {
+    // Pointing up - Only index finger extended
+    if (!thumbExtended && indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
       return { name: 'pointing_up', confidence: 0.9, timestamp: Date.now() };
     }
 
-    if (indexUp && middleUp && ringUp && pinkyUp) {
+    // Thumbs up - Only thumb extended
+    if (thumbExtended && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+      return { name: 'thumbs_up', confidence: 0.9, timestamp: Date.now() };
+    }
+
+    // Thumbs down - Check if thumb is pointing down (below wrist level)
+    if (thumbTip.y > wrist.y + 0.05 && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+      return { name: 'thumbs_down', confidence: 0.9, timestamp: Date.now() };
+    }
+
+    // Open palm - All fingers extended
+    if (thumbExtended && indexExtended && middleExtended && ringExtended && pinkyExtended) {
       return { name: 'open_palm', confidence: 0.9, timestamp: Date.now() };
     }
 
-    if (!indexUp && !middleUp && !ringUp && !pinkyUp) {
+    // Closed fist - All fingers curled
+    if (!thumbExtended && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
       return { name: 'closed_fist', confidence: 0.9, timestamp: Date.now() };
     }
 
