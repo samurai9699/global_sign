@@ -27,7 +27,6 @@ const SignToSpeechPage: React.FC = () => {
   
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const ttsTimeoutRef = React.useRef<NodeJS.Timeout>();
   const lastSpokenTextRef = React.useRef<string>('');
   
   const {
@@ -68,11 +67,6 @@ const SignToSpeechPage: React.FC = () => {
     stopProcessing();
     setIsTranslating(false);
     setStatus('idle');
-    
-    // Clear any pending TTS timeout
-    if (ttsTimeoutRef.current) {
-      clearTimeout(ttsTimeoutRef.current);
-    }
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -92,36 +86,29 @@ const SignToSpeechPage: React.FC = () => {
     }
   };
 
-  const debouncedTextToSpeech = useCallback((text: string) => {
+  const speakText = useCallback((text: string) => {
     // Only speak if the text has changed and is not empty
     if (!text || text === lastSpokenTextRef.current) {
       return;
     }
 
-    // Clear any existing timeout
-    if (ttsTimeoutRef.current) {
-      clearTimeout(ttsTimeoutRef.current);
-    }
-
-    // Set a new timeout
-    ttsTimeoutRef.current = setTimeout(() => {
-      lastSpokenTextRef.current = text;
-      textToSpeech({
-        text,
-        lang: spokenLanguage.code,
-        onError: (error) => {
-          if (!error.toLowerCase().includes('cancel') && !error.toLowerCase().includes('interrupt')) {
-            console.error('TTS error:', error);
-            setError(error);
-          }
-        },
-      });
-    }, 800); // Longer debounce for sentence completion
+    lastSpokenTextRef.current = text;
+    textToSpeech({
+      text,
+      lang: spokenLanguage.code,
+      onError: (error) => {
+        console.error('TTS error:', error);
+        // Don't set error for cancellations
+        if (!error.toLowerCase().includes('cancel') && !error.toLowerCase().includes('interrupt')) {
+          setError(`Speech error: ${error}`);
+        }
+      },
+    });
   }, [spokenLanguage.code, setError]);
 
   // Handle completed translations (when sentences are finalized)
   useEffect(() => {
-    if (translatedText && isTranslating && translatedText !== lastSpokenTextRef.current) {
+    if (translatedText && isTranslating) {
       const newResult: TranslationResult = {
         original: 'gesture sequence',
         translated: translatedText,
@@ -132,9 +119,9 @@ const SignToSpeechPage: React.FC = () => {
       setStatus('success');
       
       // Speak the completed sentence
-      debouncedTextToSpeech(translatedText);
+      speakText(translatedText);
     }
-  }, [translatedText, isTranslating, debouncedTextToSpeech, setTranslationResult]);
+  }, [translatedText, isTranslating, speakText, setTranslationResult]);
 
   useEffect(() => {
     if (recognitionError) {
@@ -143,21 +130,12 @@ const SignToSpeechPage: React.FC = () => {
     }
   }, [recognitionError, setError]);
 
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (ttsTimeoutRef.current) {
-        clearTimeout(ttsTimeoutRef.current);
-      }
-    };
-  }, []);
-
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">Sign to Speech Translation</h2>
+        <h2 className="text-3xl font-bold text-gray-800 mb-4">Sign to Speech Translation</h2>
         <p className="text-gray-600 mb-6">
-          Use your webcam to capture sign language gestures. Create sentences by making multiple gestures in sequence.
+          Make clear gestures to build sentences. Each completed sentence will be spoken aloud.
         </p>
         
         {error && (
@@ -167,64 +145,54 @@ const SignToSpeechPage: React.FC = () => {
         )}
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div className="md:col-span-2">
-          <WebcamComponent
-            isActive={webcamActive}
-            onToggle={handleToggleWebcam}
-            onStreamReady={handleStreamReady}
-          />
-          <video 
-            ref={videoRef} 
-            className="hidden" 
-            autoPlay 
-            playsInline 
-            muted
-          />
-          <div className="mt-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2">
+          <div className="bg-white rounded-lg shadow-md overflow-hidden">
+            <WebcamComponent
+              isActive={webcamActive}
+              onToggle={handleToggleWebcam}
+              onStreamReady={handleStreamReady}
+            />
+            <video 
+              ref={videoRef} 
+              className="hidden" 
+              autoPlay 
+              playsInline 
+              muted
+            />
+          </div>
+          
+          <div className="mt-6">
             {webcamActive ? (
               isTranslating ? (
                 <button
                   onClick={handleStopTranslation}
-                  className="w-full py-2 px-4 bg-error-500 text-white rounded-md hover:bg-error-600 transition-colors"
+                  className="w-full py-3 px-6 bg-error-500 text-white rounded-lg hover:bg-error-600 transition-colors font-medium"
                 >
                   Stop Translation
                 </button>
               ) : (
                 <button
                   onClick={handleStartTranslation}
-                  className="w-full py-2 px-4 bg-primary-500 text-white rounded-md hover:bg-primary-600 transition-colors"
+                  className="w-full py-3 px-6 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors font-medium"
                 >
-                  Start Conversation Mode
+                  Start Gesture Recognition
                 </button>
               )
             ) : (
               <button
-                className="w-full py-2 px-4 bg-gray-300 text-gray-500 rounded-md cursor-not-allowed"
+                className="w-full py-3 px-6 bg-gray-300 text-gray-500 rounded-lg cursor-not-allowed font-medium"
                 disabled
               >
-                Please enable webcam
+                Please enable webcam first
               </button>
             )}
           </div>
-
-          {/* Conversation tips */}
-          {isTranslating && (
-            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
-              <h3 className="text-sm font-medium text-blue-800 mb-2">Conversation Tips:</h3>
-              <ul className="text-sm text-blue-700 space-y-1">
-                <li>• Hold each gesture clearly for about 1 second</li>
-                <li>• Pause briefly between gestures</li>
-                <li>• Your sentence will be spoken when completed</li>
-                <li>• Available gestures: thumbs up (yes), thumbs down (no), peace sign (peace), pointing up (up), open palm (hello), closed fist (stop)</li>
-              </ul>
-            </div>
-          )}
         </div>
         
         <div className="space-y-6">
-          <div>
-            <h3 className="text-lg font-medium text-gray-800 mb-4">Language Settings</h3>
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Language Settings</h3>
             <div className="space-y-4">
               <LanguageSelector
                 languages={SUPPORTED_LANGUAGES.sign}
@@ -243,7 +211,7 @@ const SignToSpeechPage: React.FC = () => {
           </div>
           
           <div>
-            <h3 className="text-lg font-medium text-gray-800 mb-4">Translation Results</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Translation Results</h3>
             <TranslationDisplay
               result={translationResult}
               isLoading={status === 'loading' && !translationResult}

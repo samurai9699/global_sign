@@ -33,9 +33,9 @@ const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
   if (isIdle) {
     return (
       <div className="p-4 bg-gray-50 border border-gray-200 rounded-md">
-        <p className="text-gray-500 text-center">Make a gesture to start translation</p>
+        <p className="text-gray-500 text-center font-medium">Ready to translate gestures</p>
         <p className="text-xs text-gray-400 text-center mt-2">
-          Hold each gesture for about 1 second, then pause briefly before the next gesture
+          Make clear gestures and hold them steady. Available: thumbs up (yes), thumbs down (no), peace sign (peace), pointing up (up), open palm (hello), closed fist (stop)
         </p>
       </div>
     );
@@ -43,77 +43,81 @@ const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
 
   return (
     <div className="space-y-4">
-      <div className="p-6 bg-white border border-gray-200 rounded-md">
-        {/* Current sentence being built */}
-        {sentenceInProgress && (
-          <div className="mb-4 p-4 bg-primary-50 border border-primary-200 rounded-md">
-            <h4 className="text-sm font-medium text-primary-700 mb-2">Current Sentence:</h4>
-            <p className="text-lg text-primary-800 font-medium">{sentenceInProgress}</p>
-          </div>
-        )}
-
-        {/* Current gesture detection */}
-        <div className="mb-4 p-3 bg-gray-50 rounded-md">
-          <p className="text-gray-700 font-medium">
-            {currentChunk && currentChunk.gestures.length > 0
-              ? `Last detected: ${ASL_TO_ENGLISH_MAPPING[currentChunk.gestures[currentChunk.gestures.length - 1].name]}`
-              : 'Waiting for gestures...'}
+      {/* Current sentence being built */}
+      {sentenceInProgress && (
+        <div className="p-4 bg-primary-50 border border-primary-200 rounded-md">
+          <h4 className="text-sm font-medium text-primary-700 mb-2">Building Sentence:</h4>
+          <p className="text-xl text-primary-800 font-semibold">{sentenceInProgress}</p>
+          <p className="text-xs text-primary-600 mt-2">
+            Sentence will complete automatically in a few seconds, or make another gesture to continue
           </p>
         </div>
-        
-        {/* Gesture sequence display */}
-        {currentChunk && currentChunk.gestures.length > 0 && (
-          <div className="mt-4">
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Gesture Sequence:</h4>
-            <div className="flex flex-wrap gap-2">
-              {currentChunk.gestures.map((gesture, index) => (
-                <div
-                  key={index}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                    index === currentChunk.gestures.length - 1
-                      ? 'bg-primary-100 text-primary-700 ring-2 ring-primary-300'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  {ASL_TO_ENGLISH_MAPPING[gesture.name]}
-                  {gesture.confidence > 0.8 && (
-                    <span className="ml-1 text-success-500">✓</span>
-                  )}
-                </div>
-              ))}
-            </div>
-            
-            <div className="mt-3 text-sm text-gray-500">
-              {currentChunk.gestures.length === 1
-                ? '1 gesture in current sequence'
-                : `${currentChunk.gestures.length} gestures in current sequence`}
-            </div>
-          </div>
-        )}
+      )}
 
-        {/* Instructions */}
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-          <p className="text-sm text-blue-700">
-            <strong>How to use:</strong> Hold each gesture clearly for about 1 second, then pause briefly before making the next gesture. 
-            Your sentence will be completed automatically after a few seconds of no gestures.
-          </p>
+      {/* Status display */}
+      <div className="p-4 bg-white border border-gray-200 rounded-md">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-sm font-medium text-gray-700">Recognition Status</h4>
+          <div className="flex items-center">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse mr-2"></div>
+            <span className="text-xs text-green-600">Active</span>
+          </div>
+        </div>
+        
+        <div className="text-sm text-gray-600">
+          {debugInfo || 'Waiting for clear gesture...'}
         </div>
       </div>
 
       {/* Completed translations */}
       {result && result.translated && (
         <div className="p-4 bg-success-50 border border-success-200 rounded-md">
-          <h4 className="text-sm font-medium text-success-700 mb-2">Completed Translation:</h4>
-          <p className="text-success-800 font-medium">{result.translated}</p>
+          <h4 className="text-sm font-medium text-success-700 mb-2">Completed Sentences:</h4>
+          <p className="text-lg text-success-800 font-medium">{result.translated}</p>
         </div>
       )}
 
-      {debugInfo && (
-        <div className="p-4 bg-gray-50 border border-gray-200 rounded-md">
-          <h4 className="text-sm font-medium text-gray-700 mb-2">Debug Information</h4>
-          <p className="text-sm text-gray-600">{debugInfo}</p>
+      {/* Instructions */}
+      <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+        <h4 className="text-sm font-medium text-blue-700 mb-2">How to Use:</h4>
+        <ul className="text-sm text-blue-600 space-y-1">
+          <li>• Make clear, distinct gestures</li>
+          <li>• Hold each gesture steady for about 1 second</li>
+          <li>• Wait 2 seconds between different gestures</li>
+          <li>• Your sentence will complete automatically</li>
+        </ul>
+      </div>
+
+      {/* Available gestures */}
+      <div className="p-4 bg-gray-50 border border-gray-200 rounded-md">
+        <h4 className="text-sm font-medium text-gray-700 mb-2">Available Gestures:</h4>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="flex justify-between">
+            <span className="text-gray-600">👍 Thumbs up</span>
+            <span className="text-gray-800 font-medium">yes</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">👎 Thumbs down</span>
+            <span className="text-gray-800 font-medium">no</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">✌️ Peace sign</span>
+            <span className="text-gray-800 font-medium">peace</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">☝️ Point up</span>
+            <span className="text-gray-800 font-medium">up</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">✋ Open palm</span>
+            <span className="text-gray-800 font-medium">hello</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">✊ Closed fist</span>
+            <span className="text-gray-800 font-medium">stop</span>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };
