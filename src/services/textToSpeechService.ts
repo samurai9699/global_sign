@@ -46,10 +46,18 @@ export const textToSpeech = ({
     };
 
     utterance.onerror = (event) => {
-      // Use the specific error message from the event
-      const errorMessage = event.error || 'Unknown speech synthesis error';
+      const errorType = event.error || 'unknown';
+      
+      // Handle intentional cancellations as normal operations, not errors
+      if (errorType === 'canceled' || errorType === 'interrupted') {
+        resolve();
+        return;
+      }
+      
+      // For actual errors, reject the promise and call the error handler
+      const errorMessage = `Speech synthesis error: ${errorType}`;
       onError?.(errorMessage);
-      reject(new Error(`Speech synthesis error: ${errorMessage}`));
+      reject(new Error(errorMessage));
     };
 
     window.speechSynthesis.speak(utterance);
