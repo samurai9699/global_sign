@@ -3,11 +3,12 @@ import { Hands, Results } from '@mediapipe/hands';
 import { HandGesture, ConversationChunk } from '../types';
 import { ASL_TO_ENGLISH_MAPPING } from '../utils/constants';
 
-const CHUNK_TIMEOUT = 1500;
+const GESTURE_HOLD_TIME = 800; // Time to hold gesture for recognition
+const GESTURE_PAUSE_TIME = 300; // Pause between gestures
+const SENTENCE_TIMEOUT = 4000; // Time before ending current sentence
 const CONFIDENCE_THRESHOLD = 0.3;
-const GESTURE_STABILITY_THRESHOLD = 2;
-const IDLE_TIMEOUT = 3000;
-const GESTURE_COOLDOWN = 500; // Reduced from 2000ms to 500ms for better responsiveness
+const GESTURE_STABILITY_THRESHOLD = 3; // Frames needed for stable gesture
+const IDLE_TIMEOUT = 6000; // Longer idle timeout for conversations
 
 export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -17,16 +18,22 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
   const [currentChunk, setCurrentChunk] = useState<ConversationChunk | null>(null);
   const [isIdle, setIsIdle] = useState(true);
   const [debugInfo, setDebugInfo] = useState<string>('');
+  const [sentenceInProgress, setSentenceInProgress] = useState<string>('');
   
   const handsRef = useRef<Hands | null>(null);
   const processingRef = useRef<boolean>(false);
-  const chunkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const sentenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastGestureRef = useRef<string | null>(null);
-  const gestureCountRef = useRef<Record<string, number>>({});
-  const gestureStabilityCountRef = useRef<number>(0);
+  const gestureHoldTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const lastGestureTimeRef = useRef<number>(0);
+  
+  // Gesture tracking state
+  const currentGestureRef = useRef<string | null>(null);
+  const gestureStabilityCountRef = useRef<number>(0);
+  const gestureStartTimeRef = useRef<number>(0);
+  const lastProcessedGestureRef = useRef<string | null>(null);
+  const lastProcessedTimeRef = useRef<number>(0);
+  const isWaitingForNextGestureRef = useRef<boolean>(false);
 
   const resetIdleTimeout = useCallback(() => {
     if (idleTimeoutRef.current) {
@@ -35,12 +42,34 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
     setIsIdle(false);
     idleTimeoutRef.current = setTimeout(() => {
       setIsIdle(true);
-      // Reset gesture state when idle
-      lastGestureRef.current = null;
-      gestureStabilityCountRef.current = 0;
+      setSentenceInProgress('');
+      setCurrentChunk(null);
       setDetectedGesture(null);
+      currentGestureRef.current = null;
+      gestureStabilityCountRef.current = 0;
+      lastProcessedGestureRef.current = null;
+      isWaitingForNextGestureRef.current = false;
     }, IDLE_TIMEOUT);
   }, []);
+
+  const resetSentenceTimeout = useCallback(() => {
+    if (sentenceTimeoutRef.current) {
+      clearTimeout(sentenceTimeoutRef.current);
+    }
+    sentenceTimeoutRef.current = setTimeout(() => {
+      // Finalize current sentence
+      if (sentenceInProgress) {
+        setTranslatedText(prev => {
+          const newSentence = sentenceInProgress.trim();
+          return prev ? `${prev}. ${newSentence}` : newSentence;
+        });
+        setSentenceInProgress('');
+        setCurrentChunk(null);
+      }
+      lastProcessedGestureRef.current = null;
+      isWaitingForNextGestureRef.current = false;
+    }, SENTENCE_TIMEOUT);
+  }, [sentenceInProgress]);
 
   const processFrame = useCallback(async () => {
     if (!videoRef.current || !handsRef.current || !processingRef.current) return;
@@ -66,8 +95,8 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       hands.setOptions({
         maxNumHands: 1,
         modelComplexity: 1,
-        minDetectionConfidence: 0.3,
-        minTrackingConfidence: 0.3,
+        minDetectionConfidence: 0.4,
+        minTrackingConfidence: 0.4,
       });
 
       hands.onResults((results: Results) => {
@@ -76,7 +105,7 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       });
 
       handsRef.current = hands;
-      setDebugInfo('MediaPipe Hands initialized');
+      setDebugInfo('MediaPipe Hands initialized for conversation mode');
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Unknown initialization error';
       console.error('Failed to initialize MediaPipe Hands:', error);
@@ -84,22 +113,14 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
     }
   }, []);
 
-  // Helper function to check if a finger is extended
   const isFingerExtended = (tipLandmark: any, mcpLandmark: any): boolean => {
-    return tipLandmark.y < mcpLandmark.y - 0.02; // Tip is significantly above MCP joint
+    return tipLandmark.y < mcpLandmark.y - 0.025;
   };
 
-  // Helper function to check if a finger is curled
-  const isFingerCurled = (tipLandmark: any, mcpLandmark: any): boolean => {
-    return tipLandmark.y > mcpLandmark.y + 0.02; // Tip is significantly below MCP joint
-  };
-
-  // Helper function to check if thumb is extended (different logic due to thumb orientation)
   const isThumbExtended = (thumbTip: any, thumbMcp: any, wrist: any): boolean => {
-    // For thumb, we check horizontal distance from wrist
     const thumbDistance = Math.abs(thumbTip.x - wrist.x);
     const mcpDistance = Math.abs(thumbMcp.x - wrist.x);
-    return thumbDistance > mcpDistance + 0.03;
+    return thumbDistance > mcpDistance + 0.04;
   };
 
   const processHandResults = useCallback((results: Results) => {
@@ -107,78 +128,107 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       resetIdleTimeout();
 
       if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-        setDebugInfo('No hands detected');
+        // No hands detected - reset current gesture tracking
+        if (currentGestureRef.current) {
+          currentGestureRef.current = null;
+          gestureStabilityCountRef.current = 0;
+          setDetectedGesture(null);
+          
+          // If we were waiting for the next gesture, continue waiting
+          if (!isWaitingForNextGestureRef.current) {
+            isWaitingForNextGestureRef.current = true;
+            setDebugInfo('Waiting for next gesture...');
+          }
+        }
         return;
       }
 
       const landmarks = results.multiHandLandmarks[0];
-      setDebugInfo(`Processing landmarks: ${landmarks.length} points detected`);
-
       const gesture = recognizeGestureFromLandmarks(landmarks);
       const currentTime = Date.now();
       
       if (gesture) {
-        const currentGestureName = gesture.name;
-
-        // Check if enough time has passed since the last gesture
-        if (currentTime - lastGestureTimeRef.current < GESTURE_COOLDOWN) {
-          return;
-        }
-
-        if (lastGestureRef.current === currentGestureName) {
+        const gestureName = gesture.name;
+        
+        // Check if this is the same gesture as currently being tracked
+        if (currentGestureRef.current === gestureName) {
           gestureStabilityCountRef.current++;
-        } else {
-          gestureStabilityCountRef.current = 1;
-        }
-
-        if (gestureStabilityCountRef.current >= GESTURE_STABILITY_THRESHOLD) {
-          // Only process if it's a new gesture or enough time has passed
-          if (lastGestureRef.current !== currentGestureName || 
-              currentTime - lastGestureTimeRef.current >= GESTURE_COOLDOWN) {
+          
+          // Check if gesture has been held long enough and is stable
+          if (gestureStabilityCountRef.current >= GESTURE_STABILITY_THRESHOLD) {
+            const holdTime = currentTime - gestureStartTimeRef.current;
             
-            setDetectedGesture(gesture);
-            const translatedWord = ASL_TO_ENGLISH_MAPPING[currentGestureName];
+            if (holdTime >= GESTURE_HOLD_TIME) {
+              // Check if this gesture is different from the last processed one
+              // or enough time has passed since the last gesture
+              const timeSinceLastGesture = currentTime - lastProcessedTimeRef.current;
+              
+              if (lastProcessedGestureRef.current !== gestureName || 
+                  timeSinceLastGesture >= GESTURE_PAUSE_TIME) {
+                
+                // Process the gesture
+                const translatedWord = ASL_TO_ENGLISH_MAPPING[gestureName];
+                
+                setDetectedGesture(gesture);
+                
+                // Add to current sentence
+                setSentenceInProgress(prev => {
+                  const newSentence = prev ? `${prev} ${translatedWord}` : translatedWord;
+                  return newSentence.trim();
+                });
 
-            setCurrentChunk(prev => {
-              const newChunk: ConversationChunk = {
-                gestures: prev ? [...prev.gestures, gesture] : [gesture],
-                text: prev ? `${prev.text} ${translatedWord}`.trim() : translatedWord,
-                timestamp: Date.now(),
-              };
-              return newChunk;
-            });
+                // Update current chunk for display
+                setCurrentChunk(prev => {
+                  const newChunk: ConversationChunk = {
+                    gestures: prev ? [...prev.gestures, gesture] : [gesture],
+                    text: prev ? `${prev.text} ${translatedWord}`.trim() : translatedWord,
+                    timestamp: Date.now(),
+                  };
+                  return newChunk;
+                });
 
-            setTranslatedText(prev => {
-              const newText = `${prev ? prev + ' ' : ''}${translatedWord}`.trim();
-              return newText;
-            });
-
-            // Update last gesture time
-            lastGestureTimeRef.current = currentTime;
-
-            if (chunkTimeoutRef.current) {
-              clearTimeout(chunkTimeoutRef.current);
+                // Update tracking variables
+                lastProcessedGestureRef.current = gestureName;
+                lastProcessedTimeRef.current = currentTime;
+                isWaitingForNextGestureRef.current = false;
+                
+                // Reset sentence timeout
+                resetSentenceTimeout();
+                
+                setDebugInfo(`Added "${translatedWord}" to sentence. Current: "${sentenceInProgress} ${translatedWord}".trim()`);
+              }
+            } else {
+              setDebugInfo(`Holding gesture "${gestureName}" for ${Math.round(holdTime)}ms (need ${GESTURE_HOLD_TIME}ms)`);
             }
-            
-            chunkTimeoutRef.current = setTimeout(() => {
-              setCurrentChunk(null);
-              lastGestureRef.current = null;
-              gestureStabilityCountRef.current = 0;
-            }, CHUNK_TIMEOUT);
+          }
+        } else {
+          // New gesture detected
+          currentGestureRef.current = gestureName;
+          gestureStabilityCountRef.current = 1;
+          gestureStartTimeRef.current = currentTime;
+          setDebugInfo(`New gesture detected: ${gestureName}`);
+        }
+      } else {
+        // No gesture recognized
+        if (currentGestureRef.current) {
+          currentGestureRef.current = null;
+          gestureStabilityCountRef.current = 0;
+          setDetectedGesture(null);
+          
+          if (!isWaitingForNextGestureRef.current) {
+            isWaitingForNextGestureRef.current = true;
+            setDebugInfo('No gesture - waiting for next gesture...');
           }
         }
-
-        lastGestureRef.current = currentGestureName;
       }
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Unknown processing error';
       console.error('Error processing hand results:', error);
       setError(`Error processing gestures: ${error}`);
     }
-  }, [resetIdleTimeout]);
+  }, [resetIdleTimeout, resetSentenceTimeout, sentenceInProgress]);
 
   const recognizeGestureFromLandmarks = (landmarks: any): HandGesture | null => {
-    // Hand landmark indices according to MediaPipe
     const wrist = landmarks[0];
     const thumbTip = landmarks[4];
     const thumbMcp = landmarks[2];
@@ -191,18 +241,12 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
     const pinkyTip = landmarks[20];
     const pinkyMcp = landmarks[17];
 
-    // Determine finger states using more precise logic
     const thumbExtended = isThumbExtended(thumbTip, thumbMcp, wrist);
     const indexExtended = isFingerExtended(indexTip, indexMcp);
     const middleExtended = isFingerExtended(middleTip, middleMcp);
     const ringExtended = isFingerExtended(ringTip, ringMcp);
     const pinkyExtended = isFingerExtended(pinkyTip, pinkyMcp);
 
-    // Update debug info with finger states
-    setDebugInfo(`Fingers - Thumb: ${thumbExtended ? 'Extended' : 'Curled'}, Index: ${indexExtended ? 'Extended' : 'Curled'}, Middle: ${middleExtended ? 'Extended' : 'Curled'}, Ring: ${ringExtended ? 'Extended' : 'Curled'}, Pinky: ${pinkyExtended ? 'Extended' : 'Curled'}`);
-
-    // Check for specific gestures in order of specificity (most specific first)
-    
     // Victory sign (peace) - Index and middle extended, others curled
     if (!thumbExtended && indexExtended && middleExtended && !ringExtended && !pinkyExtended) {
       return { name: 'victory', confidence: 0.9, timestamp: Date.now() };
@@ -218,8 +262,8 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
       return { name: 'thumbs_up', confidence: 0.9, timestamp: Date.now() };
     }
 
-    // Thumbs down - Check if thumb is pointing down (below wrist level)
-    if (thumbTip.y > wrist.y + 0.05 && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+    // Thumbs down - Thumb pointing down
+    if (thumbTip.y > wrist.y + 0.06 && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
       return { name: 'thumbs_down', confidence: 0.9, timestamp: Date.now() };
     }
 
@@ -243,15 +287,20 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
     }
     
     try {
-      setDebugInfo('Starting gesture recognition');
+      setDebugInfo('Starting conversation mode gesture recognition');
       setIsProcessing(true);
       processingRef.current = true;
+      
+      // Reset all state
       setCurrentChunk(null);
-      lastGestureRef.current = null;
-      gestureCountRef.current = {};
-      gestureStabilityCountRef.current = 0;
-      lastGestureTimeRef.current = 0;
       setTranslatedText('');
+      setSentenceInProgress('');
+      currentGestureRef.current = null;
+      gestureStabilityCountRef.current = 0;
+      lastProcessedGestureRef.current = null;
+      lastProcessedTimeRef.current = 0;
+      isWaitingForNextGestureRef.current = false;
+      
       setError(null);
       resetIdleTimeout();
       
@@ -267,24 +316,39 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
     setDebugInfo('Stopping gesture recognition');
     setIsProcessing(false);
     processingRef.current = false;
-    setDetectedGesture(null);
-    setTranslatedText('');
-    setCurrentChunk(null);
-    lastGestureRef.current = null;
-    gestureCountRef.current = {};
-    gestureStabilityCountRef.current = 0;
-    lastGestureTimeRef.current = 0;
     
-    if (chunkTimeoutRef.current) {
-      clearTimeout(chunkTimeoutRef.current);
+    // Finalize any sentence in progress
+    if (sentenceInProgress) {
+      setTranslatedText(prev => {
+        const newSentence = sentenceInProgress.trim();
+        return prev ? `${prev}. ${newSentence}` : newSentence;
+      });
+    }
+    
+    // Reset all state
+    setDetectedGesture(null);
+    setSentenceInProgress('');
+    setCurrentChunk(null);
+    currentGestureRef.current = null;
+    gestureStabilityCountRef.current = 0;
+    lastProcessedGestureRef.current = null;
+    lastProcessedTimeRef.current = 0;
+    isWaitingForNextGestureRef.current = false;
+    
+    // Clear all timeouts
+    if (sentenceTimeoutRef.current) {
+      clearTimeout(sentenceTimeoutRef.current);
     }
     if (idleTimeoutRef.current) {
       clearTimeout(idleTimeoutRef.current);
     }
+    if (gestureHoldTimeoutRef.current) {
+      clearTimeout(gestureHoldTimeoutRef.current);
+    }
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
     }
-  }, []);
+  }, [sentenceInProgress]);
 
   useEffect(() => {
     initializeHands();
@@ -303,5 +367,6 @@ export function useSignRecognition(videoRef: React.RefObject<HTMLVideoElement>) 
     debugInfo,
     startProcessing,
     stopProcessing,
+    sentenceInProgress, // Export current sentence for UI display
   };
 }

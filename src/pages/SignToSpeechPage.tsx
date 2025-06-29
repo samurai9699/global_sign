@@ -28,6 +28,7 @@ const SignToSpeechPage: React.FC = () => {
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const ttsTimeoutRef = React.useRef<NodeJS.Timeout>();
+  const lastSpokenTextRef = React.useRef<string>('');
   
   const {
     isProcessing,
@@ -39,6 +40,7 @@ const SignToSpeechPage: React.FC = () => {
     debugInfo,
     startProcessing,
     stopProcessing,
+    sentenceInProgress,
   } = useSignRecognition(videoRef);
 
   const handleToggleWebcam = (active: boolean) => {
@@ -59,6 +61,7 @@ const SignToSpeechPage: React.FC = () => {
     startProcessing();
     setStatus('loading');
     setError(null);
+    lastSpokenTextRef.current = '';
   };
 
   const handleStopTranslation = () => {
@@ -76,7 +79,6 @@ const SignToSpeechPage: React.FC = () => {
     if (videoRef.current) {
       videoRef.current.srcObject = stream;
       
-      // Only attempt to play if the video is ready and not already playing
       const playVideo = () => {
         if (videoRef.current && videoRef.current.readyState === 4 && videoRef.current.paused) {
           videoRef.current.play().catch(error => {
@@ -85,15 +87,17 @@ const SignToSpeechPage: React.FC = () => {
         }
       };
 
-      // Add event listener for when enough data is available
       videoRef.current.addEventListener('canplay', playVideo);
-      
-      // Try to play immediately if the video is already ready
       playVideo();
     }
   };
 
   const debouncedTextToSpeech = useCallback((text: string) => {
+    // Only speak if the text has changed and is not empty
+    if (!text || text === lastSpokenTextRef.current) {
+      return;
+    }
+
     // Clear any existing timeout
     if (ttsTimeoutRef.current) {
       clearTimeout(ttsTimeoutRef.current);
@@ -101,34 +105,36 @@ const SignToSpeechPage: React.FC = () => {
 
     // Set a new timeout
     ttsTimeoutRef.current = setTimeout(() => {
+      lastSpokenTextRef.current = text;
       textToSpeech({
         text,
         lang: spokenLanguage.code,
         onError: (error) => {
-          // Only set error for non-cancellation errors
           if (!error.toLowerCase().includes('cancel') && !error.toLowerCase().includes('interrupt')) {
             console.error('TTS error:', error);
             setError(error);
           }
         },
       });
-    }, 500); // 500ms debounce delay
+    }, 800); // Longer debounce for sentence completion
   }, [spokenLanguage.code, setError]);
 
+  // Handle completed translations (when sentences are finalized)
   useEffect(() => {
-    if (translatedText && isTranslating) {
+    if (translatedText && isTranslating && translatedText !== lastSpokenTextRef.current) {
       const newResult: TranslationResult = {
-        original: detectedGesture?.name || 'unknown gesture',
+        original: 'gesture sequence',
         translated: translatedText,
-        confidence: detectedGesture?.confidence || 0.5,
+        confidence: 0.9,
       };
       
       setTranslationResult(newResult);
       setStatus('success');
       
+      // Speak the completed sentence
       debouncedTextToSpeech(translatedText);
     }
-  }, [translatedText, detectedGesture, isTranslating, debouncedTextToSpeech, setTranslationResult]);
+  }, [translatedText, isTranslating, debouncedTextToSpeech, setTranslationResult]);
 
   useEffect(() => {
     if (recognitionError) {
@@ -151,7 +157,7 @@ const SignToSpeechPage: React.FC = () => {
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-800 mb-4">Sign to Speech Translation</h2>
         <p className="text-gray-600 mb-6">
-          Use your webcam to capture sign language gestures. Our AI will translate them into spoken language.
+          Use your webcam to capture sign language gestures. Create sentences by making multiple gestures in sequence.
         </p>
         
         {error && (
@@ -189,7 +195,7 @@ const SignToSpeechPage: React.FC = () => {
                   onClick={handleStartTranslation}
                   className="w-full py-2 px-4 bg-primary-500 text-white rounded-md hover:bg-primary-600 transition-colors"
                 >
-                  Start Translation
+                  Start Conversation Mode
                 </button>
               )
             ) : (
@@ -201,6 +207,19 @@ const SignToSpeechPage: React.FC = () => {
               </button>
             )}
           </div>
+
+          {/* Conversation tips */}
+          {isTranslating && (
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+              <h3 className="text-sm font-medium text-blue-800 mb-2">Conversation Tips:</h3>
+              <ul className="text-sm text-blue-700 space-y-1">
+                <li>• Hold each gesture clearly for about 1 second</li>
+                <li>• Pause briefly between gestures</li>
+                <li>• Your sentence will be spoken when completed</li>
+                <li>• Available gestures: thumbs up (yes), thumbs down (no), peace sign (peace), pointing up (up), open palm (hello), closed fist (stop)</li>
+              </ul>
+            </div>
+          )}
         </div>
         
         <div className="space-y-6">
@@ -232,6 +251,7 @@ const SignToSpeechPage: React.FC = () => {
               currentChunk={currentChunk}
               isIdle={isIdle}
               debugInfo={debugInfo}
+              sentenceInProgress={sentenceInProgress}
             />
           </div>
         </div>

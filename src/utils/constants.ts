@@ -28,7 +28,7 @@ export const DEFAULT_SIGN_LANGUAGE: Language = SUPPORTED_LANGUAGES.sign[0];
 
 export const HAND_MODEL_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/';
 
-// Expanded gesture mappings with more common signs
+// Enhanced gesture mappings optimized for conversation building
 export const ASL_TO_ENGLISH_MAPPING: Record<string, string> = {
   'thumbs_up': 'yes',
   'thumbs_down': 'no',
@@ -41,4 +41,8 @@ export const ASL_TO_ENGLISH_MAPPING: Record<string, string> = {
   'wave': 'goodbye',
   'pinch': 'small',
   'spread_fingers': 'big',
+  'index_middle': 'two',
+  'three_fingers': 'three',
+  'four_fingers': 'four',
+  'five_fingers': 'five',
 };
